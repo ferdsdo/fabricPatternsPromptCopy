@@ -1,0 +1,1 @@
+# fabricPatternsPromptCopy.github.io
