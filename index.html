@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Copy Text Boxes</title>
+    <style>
+        .copy-container {
+            margin: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .copy-text {
+            width: 80%;
+            padding: 8px;
+            margin-right: 10px;
+        }
+        .copy-btn, .view-btn {
+            padding: 8px 15px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        #user-input {
+            width: 100%;
+            padding: 15px;
+            margin: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: white;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border-bottom: 1px solid #ddd;
+        }
+        .topBox {
+            height: 60px; /* Match navbar height */
+        }
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 80px;
+            width: 200px;
+            height: calc(100vh - 80px);
+            overflow-y: auto;
+            background: #f5f5f5;
+            padding: 20px;
+            border-right: 1px solid #ddd;
+        }
+        .sidebar-search {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .sidebar a {
+            display: block;
+            padding: 10px;
+            color: #333;
+            text-decoration: none;
+            border-bottom: 1px solid #ddd;
+        }
+        .sidebar a:hover {
+            background: #e5e5e5;
+        }
+        .main-content {
+            margin-left: 220px;
+            padding: 20px;
+            padding-top: 80px;
+        }
+        .markdown-content {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            display: none;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="topBox">
+        <input type="text" id="user-input" placeholder="Enter text to append...">
+    </div>
+    <script>
+        const prompts = [];
+        
+        async function loadPrompts() {
+            try {
+                // First, fetch the list of files in the patterns directory
+                const response = await fetch('./patterns');
+                const files = await response.text();
+
+                // Parse the directory listing HTML to get directories
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(files, 'text/html');
+                const links = Array.from(doc.querySelectorAll('a'));
+                
+                // Get subdirectories only
+                const subdirs = links
+                    .map(a => './patterns/' + a.getAttribute('href'))
+                    .filter(href => href.endsWith('/') && !href.includes('../'));
+
+                // Load system.md and user.md from each subdirectory
+                for (const subdir of subdirs) {
+                    try {
+                        const subdirResponse = await fetch(subdir);
+                        const subdirFiles = await subdirResponse.text();
+                        const subdirDoc = parser.parseFromString(subdirFiles, 'text/html');
+                        const mdFiles = Array.from(subdirDoc.querySelectorAll('a'))
+                            .map(a => subdir + a.getAttribute('href'));
+
+                        // Get paths for system.md and user.md if they exist
+                        const systemFile = mdFiles.find(f => f.endsWith('system.md'));
+                        const userFile = mdFiles.find(f => f.endsWith('user.md'));
+
+                        if (systemFile) {
+                            try {
+                                const systemResponse = await fetch(systemFile);
+                                const systemText = await systemResponse.text();
+                                
+                                let combinedText = systemText;
+
+                                // Add user.md content if it exists
+                                if (userFile) {
+                                    const userResponse = await fetch(userFile);
+                                    const userText = await userResponse.text();
+                                    combinedText += '\n\n' + userText;
+                                }
+
+                                const folderName = subdir.split('/').filter(s => s).pop();
+                                prompts.push({
+                                    text: combinedText,
+                                    folder: folderName
+                                });
+                            } catch (err) {
+                                console.error(`Error loading files from ${subdir}:`, err);
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`Error loading subdirectory ${subdir}:`, err);
+                    }
+                }
+                
+                // Create the copy containers after loading all prompts
+                createCopyContainers();
+                
+            } catch (err) {
+                console.error('Error loading patterns directory:', err);
+            }
+        }
+        
+        loadPrompts();
+    </script>
+
+    <script>
+        function createCopyContainers() {
+            // Create sidebar
+            const sidebar = document.createElement('div');
+            sidebar.className = 'sidebar';
+            
+            // Add search input to sidebar
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'sidebar-search';
+            searchInput.placeholder = 'Search patterns...';
+            searchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const links = sidebar.querySelectorAll('a');
+                links.forEach(link => {
+                    const text = link.textContent.toLowerCase();
+                    link.style.display = text.includes(searchTerm) ? 'block' : 'none';
+                });
+            });
+            sidebar.appendChild(searchInput);
+            
+            document.body.appendChild(sidebar);
+
+            // Create main content area
+            const mainContent = document.createElement('div');
+            mainContent.className = 'main-content';
+            document.body.appendChild(mainContent);
+
+            prompts.forEach((prompt, index) => {
+                // Create sidebar link
+                const sidebarLink = document.createElement('a');
+                sidebarLink.textContent = prompt.folder;
+                sidebarLink.href = `#prompt-${index}`;
+                sidebar.appendChild(sidebarLink);
+
+                // Create prompt container
+                const container = document.createElement('div');
+                container.className = 'copy-container';
+                container.id = `prompt-${index}`;
+
+                const title = document.createElement('h3');
+                title.textContent = prompt.folder;
+                container.appendChild(title);
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'copy-text';
+                input.value = prompt.text;
+                input.readOnly = true;
+
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                button.onclick = function() { copyText(this); };
+
+                const viewButton = document.createElement('button');
+                viewButton.className = 'view-btn';
+                viewButton.textContent = 'View';
+                viewButton.onclick = function() { toggleMarkdown(this, prompt.text); };
+
+                const markdownDiv = document.createElement('div');
+                markdownDiv.className = 'markdown-content';
+
+                container.appendChild(input);
+                container.appendChild(button);
+                container.appendChild(viewButton);
+                container.appendChild(markdownDiv);
+                mainContent.appendChild(container);
+            });
+        }
+    </script>
+
+    <script>
+        function copyText(button) {
+            const textBox = button.previousElementSibling;
+            const userInput = document.getElementById('user-input').value;
+            const textToCopy = textBox.value + " " + userInput;
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                // Temporarily change button text to show success
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 1000);
+
+                // Create and append new div with copied text
+                const outputDiv = document.createElement('div');
+                outputDiv.textContent = textToCopy;
+                document.body.appendChild(outputDiv);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        }
+
+        function toggleMarkdown(button, text) {
+            const markdownDiv = button.nextElementSibling;
+            if (markdownDiv.style.display === 'none' || !markdownDiv.style.display) {
+                markdownDiv.innerHTML = marked.parse(text);
+                markdownDiv.style.display = 'block';
+                button.textContent = 'Hide';
+            } else {
+                markdownDiv.style.display = 'none';
+                button.textContent = 'View';
+            }
+        }
+    </script>
+</body>
+</html>
