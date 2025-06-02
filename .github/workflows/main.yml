@@ -1,45 +1,49 @@
-name: Monthly Sync of Fabric Patterns
+name: Sync Fabric Patterns
 
 on:
   schedule:
-    - cron: '0 0 1 * *'  # at 00:00 on the 1st of every month
-  workflow_dispatch:     # also allows manual trigger
+    - cron: '0 * * * *'  # every hour
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout your repo
+      - name: Checkout target repo (your repo)
         uses: actions/checkout@v4
 
-      - name: Clone danielmiessler/fabric
+      - name: Clone fabric repo (shallow)
         run: |
           git clone --depth 1 https://github.com/danielmiessler/fabric.git fabric-source
 
-      - name: Get latest commit hash for patterns/
-        id: check
+      - name: Compare hash to last sync
+        id: diff
         run: |
           mkdir -p .cache
           HASH=$(git -C fabric-source log -n 1 --pretty=format:%H -- patterns)
-          echo "Latest commit hash: $HASH"
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-
-          if [ -f .cache/last_sync ] && [ "$(cat .cache/last_sync)" = "$HASH" ]; then
-            echo "No updates in patterns/. Exiting."
+          echo "Latest commit hash for patterns/: $HASH"
+          if [ -f .cache/last_sync ]; then
+            LAST=$(cat .cache/last_sync)
+          else
+            LAST=""
+          fi
+          if [ "$HASH" = "$LAST" ]; then
+            echo "No changes in patterns/, exiting."
             echo "changed=false" >> $GITHUB_OUTPUT
             exit 0
           else
+            echo "Changes detected in patterns/."
             echo "$HASH" > .cache/last_sync
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Copy updated patterns/ folder
-        if: steps.check.outputs.changed == 'true'
+      - name: Copy patterns/ folder
+        if: steps.diff.outputs.changed == 'true'
         run: |
           rm -rf patterns
-          mkdir -p patterns
-          cp -r fabric-source/patterns/* patterns/
+          mkdir -p synced
+          cp -r fabric-source/patterns synced/
 
       - name: Commit and push updates
         if: steps.check.outputs.changed == 'true'
@@ -48,4 +52,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add patterns .cache/last_sync
           git commit -m "Monthly sync: updated fabric/patterns folder"
-          git push
+          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }} HEAD:main
+
